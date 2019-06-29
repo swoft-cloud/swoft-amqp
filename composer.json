@@ -1,5 +1,5 @@
 {
-  "name": "swoft/apollo",
+  "name": "swoft/amqp",
   "type": "library",
   "keywords": [
     "php",
@@ -14,7 +14,7 @@
   },
   "autoload": {
     "psr-4": {
-      "Swoft\\Apollo\\": "src/"
+      "Swoft\\Amqp\\": "src/"
     }
   },
   "require-dev": {
@@ -22,8 +22,8 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "SwoftTest\\Apollo\\Unit\\": "test/unit/",
-      "SwoftTest\\Apollo\\Testing\\": "test/testing/"
+      "SwoftTest\\Amqp\\Unit\\": "test/unit/",
+      "SwoftTest\\Amqp\\Testing\\": "test/testing/"
     }
   },
   "repositories": {
