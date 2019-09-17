@@ -1,6 +1,6 @@
 <?php declare(strict_types=1);
 
-namespace Jcsp\Amqp;
+namespace Swoft\Amqp;
 
 use Swoft\Helper\ComposerJSON;
 use Swoft\SwoftComponent;

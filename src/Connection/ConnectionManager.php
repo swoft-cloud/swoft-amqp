@@ -1,11 +1,11 @@
 <?php declare(strict_types=1);
 
-namespace Jcsp\Amqp\Connection;
+namespace Swoft\Amqp\Connection;
 
+use Swoft\Amqp\Contract\ConnectionInterface;
 use Swoft\Bean\Annotation\Mapping\Bean;
 use Swoft\Co;
 use Swoft\Concern\ArrayPropertyTrait;
-use Swoft\Connection\Pool\Contract\ConnectionInterface;
 
 /**
  * Class ConnectionManager
@@ -13,16 +13,23 @@ use Swoft\Connection\Pool\Contract\ConnectionInterface;
  * @since   2.0
  * @Bean()
  *
- * @package Jcsp\Amqp\Connection
+ * @package Swoft\Amqp\Connection
  */
 class ConnectionManager
 {
-
+    /**
+     * @example
+     * [
+     *     'tid' => [
+     *         'cid' => [
+     *             'connectionId' => Connection
+     *         ]
+     *     ]
+     * ]
+     */
     use ArrayPropertyTrait;
 
     /**
-     * setConnection
-     *
      * @param ConnectionInterface $connection
      */
     public function setConnection(ConnectionInterface $connection): void

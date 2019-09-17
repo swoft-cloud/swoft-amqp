@@ -1,31 +1,22 @@
 <?php declare(strict_types=1);
 
+namespace Swoft\Amqp\Connection;
 
-namespace Jcsp\Amqp\Connection;
-
-use Closure;
-use Jcsp\Amqp\Client;
-use Jcsp\Amqp\Contract\ConnectionInterface;
-use Jcsp\Amqp\Pool;
+use Exception;
+use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Connection\AMQPSocketConnection;
 use PhpAmqpLib\Connection\AMQPSSLConnection;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
-use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Message\AMQPMessage;
+use Swoft\Amqp\AmqpDb;
+use Swoft\Amqp\Contract\ConnectionInterface;
+use Swoft\Amqp\Exception\AMQPException;
 use Swoft\Connection\Pool\AbstractConnection;
-use Throwable;
-use Exception;
 
-/**
- * Class Connection
- *
- * @since 2.0
- */
-abstract class Connection extends AbstractConnection implements ConnectionInterface
+class Connection extends AbstractConnection implements ConnectionInterface
 {
-
     /**
-     * @var AMQPStreamConnection|AMQPSocketConnection|AMQPSSLConnection
+     * @var AMQPSSLConnection | AMQPSocketConnection | AMQPStreamConnection
      */
     protected $connection;
 
@@ -45,45 +36,61 @@ abstract class Connection extends AbstractConnection implements ConnectionInterf
     protected $queue;
 
     /**
-     * @var Client
+     * @var AmqpDb
      */
-    protected $client;
+    protected $amqpDb;
 
     /**
-     * @var Pool
+     * @param Pool    $pool
+     * @param RedisDb $redisDb
      */
-    protected $pool;
-
-    /**
-     * @param Pool   $pool
-     * @param Client $client
-     */
-    public function initialize(Pool $pool, Client $client): void
+    public function initialize(Pool $pool, RedisDb $redisDb)
     {
-        $this->pool   = $pool;
-        $this->client = $client;
+        $this->pool     = $pool;
+        $this->redisDb  = $redisDb;
+        $this->lastTime = time();
+
+        $this->id = $this->pool->getConnectionId();
     }
 
     /**
-     * close
+     * createClient
      *
+     * @throws AMQPException
      * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
      */
-    public function close(): void
+    public function createClient(): void
     {
-        $this->channel->close();
-        $this->connection->close();
+        $auths    = $this->amqpDb->getAuths();
+        $options  = $this->amqpDb->getOptions();
+        $exchange = $this->amqpDb->getExchange();
+        $queue    = $this->amqpDb->getQueue();
+        $route    = $this->amqpDb->getRoute();
+        try {
+            $this->connection = $this->create($auths, $options);
+            $this->channel    = $connection->channel();
+        } catch (Exception $exception) {
+            throw new AMQPException(
+                sprintf('RabbitMQ connect error is %s file=%s line=%d', $e->getMessage(), $e->getFile(), $e->getLine())
+            );
+        }
+
+        $this->declareQueue($queue);
+        $this->declareExchange($exchange);
+        $this->bind($route);
     }
 
     /**
      * reconnect
      *
      * @return bool
+     * @throws AMQPException
+     * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
      */
     public function reconnect(): bool
     {
         try {
-            $this->create();
+            $this->createClient();
         } catch (Throwable $e) {
             Log::error('RabbitMQ reconnect error(%s)', $e->getMessage());
 
@@ -94,106 +101,85 @@ abstract class Connection extends AbstractConnection implements ConnectionInterf
     }
 
     /**
-     * channel
+     * declareExchange
      *
-     * @param null $channelId
+     * @param array $exchange
      *
-     * @return AMQPChannel
+     * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
      */
-    public function channel($channelId = null): AMQPChannel
+    public function declareExchange(array $exchange): void
     {
-        $this->channel = $this->connection->channel($channelId);
-
-        return $this->channel;
+        try {
+            $this->channel->exchange_declare(
+                $exchange['name'],
+                $exchange['type'],
+                $exchange['passive'] ?? false,
+                $exchange['durable'] ?? true,
+                $exchange['auto_delete'] ?? false,
+                $exchange['internal'] ?? false,
+                $exchange['nowait'] ?? false,
+                $exchange['arguments'] ?? [],
+                $exchange['ticket'] ?? null
+            );
+            $this->exchange = $exchange['name'];
+        } catch (Exception $exception) {
+            throw new AMQPException(
+                sprintf('RabbitMQ declare exchange error is %s file=%s line=%d', $e->getMessage(), $e->getFile(), $e->getLine())
+            );
+        }
     }
 
     /**
-     * exchange
+     * declareQueue
      *
-     * @param array $exchangeConf
+     * @param array $queue
      *
-     * @return string
-     * @throws \Jcsp\Amqp\Exception\AMQPException
-     * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
+     * @throws AMQPException
      */
-    public function exchange(array $exchangeConf = []): string
+    public function declareQueue(array $queue): void
     {
-        $config = empty($exchangeConf) ? $this->client->getExchange() : $exchangeConf;
-        $this->channel->exchange_declare(
-            $config['name'],
-            $config['type'],
-            $config['passive'] ?? false,
-            $config['durable'] ?? true,
-            $config['auto_delete'] ?? false,
-            $config['internal'] ?? false,
-            $config['nowait'] ?? false,
-            $config['arguments'] ?? [],
-            $config['ticket'] ?? null
-        );
-
-        $this->exchange = $config['name'];
-
-        return $this->exchange;
+        try {
+            $this->channel->queue_declare(
+                $queue['name'],
+                $queue['passive'] ?? false,
+                $queue['durable'] ?? true,
+                $queue['exclusive'] ?? false,
+                $queue['auto_delete'] ?? false,
+                $queue['nowait'] ?? false,
+                $queue['arguments'] ?? [],
+                $queue['ticket'] ?? null
+            );
+            $this->queue = $queue['name'];
+        } catch (Exception $exception) {
+            throw new AMQPException(
+                sprintf('RabbitMQ declare queue error is %s file=%s line=%d', $e->getMessage(), $e->getFile(), $e->getLine())
+            );
+        }
     }
 
     /**
-     * queue
+     * bind
      *
-     * @param array $queueConf
+     * @param array $route
      *
-     * @return string
-     * @throws \Jcsp\Amqp\Exception\AMQPException
-     * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
+     * @throws AMQPException
      */
-    public function queue(array $queueConf = []): string
+    public function bind(array $route): void
     {
-        $config = empty($queueConf) ? $this->client->getQueue() : $queueConf;
-        $this->channel->queue_declare(
-            $config['name'],
-            $config['passive'] ?? false,
-            $config['durable'] ?? true,
-            $config['exclusive'] ?? false,
-            $config['auto_delete'] ?? false,
-            $config['nowait'] ?? false,
-            $config['arguments'] ?? [],
-            $config['ticket'] ?? null
-        );
-
-        $this->queue = $config['name'];
-
-        return $this->queue;
-    }
-
-    /**
-     * 构建连接
-     * establish
-     *
-     * @param null  $channelId
-     * @param array $routeConf
-     * @param array $queueConf
-     * @param array $exchangeConf
-     *
-     * @return AMQPChannel
-     * @throws \Jcsp\Amqp\Exception\AMQPException
-     * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
-     */
-    public function establish($channelId = null, array $routeConf = [], array $queueConf = [], array $exchangeConf = []): AMQPChannel
-    {
-        $config   = $routeConf ?? $this->client->getRoute();
-        $channel  = $this->channel($channelId);
-        $queue    = $this->queue($queueConf);
-        $exchange = $this->exchange($exchangeConf);
-
-        $channel->queue_bind(
-            $queue,
-            $exchange,
-            $config['key'] ?? '',
-            $config['nowait'] ?? false,
-            $config['arguments'] ?? [],
-            $config['ticket'] ?? null
-        );
-
-        return $channel;
+        try {
+            $this->channel->queue_bind(
+                $this->queue,
+                $this->exchange,
+                $config['key'] ?? '',
+                $config['nowait'] ?? false,
+                $config['arguments'] ?? [],
+                $config['ticket'] ?? null
+            );
+        } catch (Exception $exception) {
+            throw new AMQPException(
+                sprintf('RabbitMQ bind queue and exchange error is %s file=%s line=%d', $e->getMessage(), $e->getFile(), $e->getLine())
+            );
+        }
     }
 
     /**
@@ -206,10 +192,10 @@ abstract class Connection extends AbstractConnection implements ConnectionInterf
      *
      * @throws \PhpAmqpLib\Exception\AMQPConnectionClosedException
      */
-    public function push(string $body, array $properties = [], string $routeKey = ''): void
+    public function push(string $message, array $prop = [], string $route = ''): void
     {
-        $message = new AMQPMessage($body, $properties);
-        $this->channel->basic_publish($message, $this->exchange, $routeKey);
+        $message = new AMQPMessage($body, $prop);
+        $this->channel->basic_publish($message, $this->exchange, $route);
     }
 
     /**
@@ -240,19 +226,19 @@ abstract class Connection extends AbstractConnection implements ConnectionInterf
      * @throws \PhpAmqpLib\Exception\AMQPRuntimeException
      * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
      */
-    public function consume(Closure $callback = null, array $consume = []): void
+    public function consume(Closure $callback = null): void
     {
         //消费消息
-        $config = empty($consume) ? $this->client->getConsume() : $consume;
+        $consume = $this->amqpDb->getConsume();
         $this->channel->basic_consume(
             $this->queue,
-            $config['consumer_tag'] ?? '',
-            $config['no_local'] ?? false,
-            $config['no_ack'] ?? false,
-            $config['exclusive'] ?? false,
-            $config['nowait'] ?? false,
-            function (AMQPMessage $message) use ($callback, $config) {
-                $cancel = is_array($config['cancel_tag']) ? in_array($message->body, $config['cancel_tag']) : $message->body == $config['cancel_tag'];
+            $consume['consumer_tag'] ?? '',
+            $consume['no_local'] ?? false,
+            $consume['no_ack'] ?? false,
+            $consume['exclusive'] ?? false,
+            $consume['nowait'] ?? false,
+            function (AMQPMessage $message) use ($callback, $consume) {
+                $cancel = is_array($consume['cancel_tag']) ? in_array($message->body, $consume['cancel_tag']) : $message->body == $consume['cancel_tag'];
                 $this->channel->basic_ack($message->delivery_info['delivery_tag']);
                 if ($cancel) {
                     $this->channel->basic_cancel($message->delivery_info['consumer_tag']);
@@ -267,12 +253,14 @@ abstract class Connection extends AbstractConnection implements ConnectionInterf
     }
 
     /**
-     * getClient
+     * 关闭连接
+     * close
      *
-     * @return Client
+     * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
      */
-    public function getClient(): Client
+    public function close(): void
     {
-        return $this->client;
+        $this->channel->close();
+        $this->connection->close();
     }
 }

@@ -1,17 +1,18 @@
 <?php declare(strict_types=1);
 
-namespace Jcsp\Amqp\Contract;
-
-use PhpAmqpLib\Channel\AMQPChannel;
+namespace Swoft\Amqp\Contract;
 
 /**
- * Class ConnectionInterface
+ * Interface ConnectionInterface
  *
- * @since 2.0
+ * @since   2.0
+ *
+ * @package Swoft\Amqp\Contract
  */
 interface ConnectionInterface
 {
-
-    public function create(): void;
-
+    /**
+     * Create client
+     */
+    public function createClient(): void;
 }
