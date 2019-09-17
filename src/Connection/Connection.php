@@ -2,6 +2,7 @@
 
 namespace Swoft\Amqp\Connection;
 
+use Closure;
 use Exception;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Connection\AMQPSocketConnection;
@@ -11,8 +12,17 @@ use PhpAmqpLib\Message\AMQPMessage;
 use Swoft\Amqp\AmqpDb;
 use Swoft\Amqp\Contract\ConnectionInterface;
 use Swoft\Amqp\Exception\AMQPException;
+use Swoft\Amqp\Pool;
+use Swoft\Bean\BeanFactory;
 use Swoft\Connection\Pool\AbstractConnection;
 
+/**
+ * Class Connection
+ *
+ * @since   2.0
+ *
+ * @package Swoft\Amqp\Connection
+ */
 class Connection extends AbstractConnection implements ConnectionInterface
 {
     /**
@@ -41,16 +51,27 @@ class Connection extends AbstractConnection implements ConnectionInterface
     protected $amqpDb;
 
     /**
-     * @param Pool    $pool
-     * @param RedisDb $redisDb
+     * @param Pool   $pool
+     * @param AmqpDb $redisDb
      */
-    public function initialize(Pool $pool, RedisDb $redisDb)
+    public function initialize(Pool $pool, AmqpDb $amqpDb)
     {
         $this->pool     = $pool;
-        $this->redisDb  = $redisDb;
+        $this->amqpDb   = $amqpDb;
         $this->lastTime = time();
 
         $this->id = $this->pool->getConnectionId();
+    }
+
+    /**
+     * create
+     *
+     * @throws AMQPException
+     * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
+     */
+    public function create(): void
+    {
+        $this->createClient();
     }
 
     /**
@@ -67,9 +88,9 @@ class Connection extends AbstractConnection implements ConnectionInterface
         $queue    = $this->amqpDb->getQueue();
         $route    = $this->amqpDb->getRoute();
         try {
-            $this->connection = $this->create($auths, $options);
-            $this->channel    = $connection->channel();
-        } catch (Exception $exception) {
+            $this->connection = $this->connect($auths, $options);
+            $this->channel    = $this->connection->channel();
+        } catch (Exception $e) {
             throw new AMQPException(
                 sprintf('RabbitMQ connect error is %s file=%s line=%d', $e->getMessage(), $e->getFile(), $e->getLine())
             );
@@ -101,6 +122,33 @@ class Connection extends AbstractConnection implements ConnectionInterface
     }
 
     /**
+     * 关闭连接
+     * close
+     *
+     * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
+     */
+    public function close(): void
+    {
+        $this->channel->close();
+        $this->connection->close();
+    }
+
+    /**
+     * release
+     *
+     * @param bool $force
+     */
+    public function release(bool $force = false): void
+    {
+        /* @var ConnectionManager $conManager */
+        $conManager = BeanFactory::getBean(ConnectionManager::class);
+        $conManager->releaseConnection($this->id);
+
+        parent::release($force);
+    }
+
+    /**
+     * 声明交换器
      * declareExchange
      *
      * @param array $exchange
@@ -130,6 +178,7 @@ class Connection extends AbstractConnection implements ConnectionInterface
     }
 
     /**
+     * 声明队列
      * declareQueue
      *
      * @param array $queue
@@ -158,6 +207,7 @@ class Connection extends AbstractConnection implements ConnectionInterface
     }
 
     /**
+     * 绑定队列和交换器
      * bind
      *
      * @param array $route
@@ -194,8 +244,9 @@ class Connection extends AbstractConnection implements ConnectionInterface
      */
     public function push(string $message, array $prop = [], string $route = ''): void
     {
-        $message = new AMQPMessage($body, $prop);
-        $this->channel->basic_publish($message, $this->exchange, $route);
+        $body = new AMQPMessage($message, $prop);
+        $this->channel->basic_publish($body, $this->exchange, $route);
+        $this->release();
     }
 
     /**
@@ -209,6 +260,7 @@ class Connection extends AbstractConnection implements ConnectionInterface
     {
         /* @var AMQPMessage $message */
         $message = $this->channel->basic_get($this->queue, true);
+        $this->release();
 
         return $message ? $message->body : null;
     }
@@ -250,17 +302,7 @@ class Connection extends AbstractConnection implements ConnectionInterface
         while ($this->channel->is_consuming()) {
             $this->channel->wait();
         }
-    }
 
-    /**
-     * 关闭连接
-     * close
-     *
-     * @throws \PhpAmqpLib\Exception\AMQPTimeoutException
-     */
-    public function close(): void
-    {
-        $this->channel->close();
-        $this->connection->close();
+        $this->release();
     }
 }

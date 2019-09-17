@@ -56,6 +56,7 @@ class ConnectionManager
         $key = sprintf('%d.%d', Co::tid(), Co::id());
 
         $connections = $this->get($key, []);
+        var_dump('=========release============');
         foreach ($connections as $connection) {
             if ($connection instanceof ConnectionInterface) {
                 $connection->release();

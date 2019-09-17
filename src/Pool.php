@@ -4,7 +4,7 @@ namespace Swoft\Amqp;
 
 use Swoft\Amqp\Connection\Connection;
 use Swoft\Amqp\Connection\ConnectionManager;
-use Swoft\Amqp\Contract\ConnectionInterface;
+use Swoft\Connection\Pool\Contract\ConnectionInterface;
 use Swoft\Amqp\Exception\AMQPException;
 use Swoft\Bean\BeanFactory;
 use Swoft\Connection\Pool\AbstractPool;
@@ -30,7 +30,7 @@ class Pool extends AbstractPool
      */
     public function createConnection(): ConnectionInterface
     {
-        return $this->redisDb->createConnection($this);
+        return $this->amqpDb->createConnection($this);
     }
 
     /**

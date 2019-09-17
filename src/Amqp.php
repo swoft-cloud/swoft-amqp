@@ -8,9 +8,24 @@ use Swoft\Amqp\Exception\AMQPException;
 use Swoft\Bean\BeanFactory;
 use Throwable;
 
+/**
+ * Class Amqp
+ *
+ * @since   2.0
+ *
+ * @package Swoft\Amqp
+ */
 class Amqp
 {
 
+    /**
+     * connection
+     *
+     * @param string $pool
+     *
+     * @return Connection
+     * @throws AMQPException
+     */
     public static function connection(string $pool = Pool::DEFAULT_POOL): Connection
     {
         try {
@@ -18,13 +33,13 @@ class Amqp
             $conManager = BeanFactory::getBean(ConnectionManager::class);
 
             /* @var Pool $amqpPool */
-            $amqpPool  = BeanFactory::getBean($pool);
+            $amqpPool   = BeanFactory::getBean($pool);
             $connection = $amqpPool->getConnection();
 
             $connection->setRelease(true);
             $conManager->setConnection($connection);
         } catch (Throwable $e) {
-            throw new RedisException(
+            throw new AMQPException(
                 sprintf('Pool error is %s file=%s line=%d', $e->getMessage(), $e->getFile(), $e->getLine())
             );
         }
@@ -37,6 +52,22 @@ class Amqp
         }
 
         return $connection;
+    }
+
+    /**
+     * __callStatic
+     *
+     * @param string $method
+     * @param array  $arguments
+     *
+     * @return mixed
+     * @throws AMQPException
+     */
+    public static function __callStatic(string $method, array $arguments)
+    {
+        $connection = self::connection();
+
+        return $connection->{$method}(...$arguments);
     }
 
 }
