@@ -119,7 +119,7 @@ class Connection extends AbstractConnection implements ConnectionInterface
         $channels = $this->client->getChannels();
         $exchange = $this->client->getExchange();
         $queue    = $this->client->getQueue();
-        $route = $this->client->getRoute();
+        $route    = $this->client->getRoute();
 
         if (!isset($channels['default'])) {
             if ($exchange && $queue) {
