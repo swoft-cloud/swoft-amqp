@@ -312,6 +312,14 @@ class Client
     }
 
     /**
+     * @param string $route
+     */
+    public function setRoute(string $route): void
+    {
+        $this->route = $route;
+    }
+
+    /**
      * @param array $channels
      */
     public function setChannels(array $channels): void
