@@ -119,11 +119,13 @@ class Connection extends AbstractConnection implements ConnectionInterface
         $channels = $this->client->getChannels();
         $exchange = $this->client->getExchange();
         $queue    = $this->client->getQueue();
+        $route = $this->client->getRoute();
 
         if (!isset($channels['default'])) {
             if ($exchange && $queue) {
                 $channels['default']['exchange'] = $exchange;
                 $channels['default']['queue']    = $queue;
+                $channels['default']['route']    = $route;
                 $this->client->setChannels($channels);
             } else {
                 $channels['default'] = Arr::first($channels);
@@ -137,8 +139,10 @@ class Connection extends AbstractConnection implements ConnectionInterface
             if (!isset($channels[$channelId]['queue'])) {
                 throw new AMQPException('RabbitMQ connect error is Queue empty');
             }
+            $route = $channels[$channelId]['route'] ?? '';
             $this->client->setExchange($channels[$channelId]['exchange']);
             $this->client->setQueue($channels[$channelId]['queue']);
+            $this->client->setRoute($route);
         } else {
             throw new AMQPException('RabbitMQ connect error is Channel has not exists');
         }
