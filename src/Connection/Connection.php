@@ -18,7 +18,9 @@ use PhpAmqpLib\Connection\AMQPSocketConnection;
 use PhpAmqpLib\Connection\AMQPSSLConnection;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Exception\AMQPTimeoutException;
+use PhpAmqpLib\Exchange\AMQPExchangeType;
 use PhpAmqpLib\Message\AMQPMessage;
+use PhpAmqpLib\Wire\AMQPTable;
 use Swoft\Amqp\Client;
 use Swoft\Amqp\Contract\ConnectionInterface;
 use Swoft\Amqp\Exception\AMQPException;
@@ -310,6 +312,70 @@ class Connection extends AbstractConnection implements ConnectionInterface
         $body     = new AMQPMessage($message, $prop);
         $this->channel->basic_publish($body, $exchange, $route);
         $this->release();
+    }
+
+    /**
+     * delay
+     *
+     * @param string $message
+     * @param int $delay
+     * @param string $route
+     * @throws AMQPException
+     */
+    public function delay(string $message, int $delay = 0, string $route = ''): void
+    {
+        $exchange = $this->client->getExchange();
+        $delayExchange = 'delay-exchange';
+        $queue    = 'delay-' . $exchange . '-' . $delay;
+
+        try {
+            $this->channel->exchange_declare(
+                $delayExchange,
+                AMQPExchangeType::DIRECT,
+                false,
+                true,
+                false,
+                false,
+                false,
+                [],
+                null
+            );
+
+            $this->channel->queue_declare(
+                $queue,
+                false,
+                true,
+                false,
+                true,
+                false,
+                new AMQPTable([
+                    'x-message-ttl'             => $delay * 1000,
+                    'x-dead-letter-exchange'    => $exchange,
+                    'x-dead-letter-routing-key' => $route
+                ]),
+                null,
+            );
+
+            $this->channel->queue_bind(
+                $queue,
+                $delayExchange,
+                $queue,
+                false,
+                [],
+                null
+            );
+
+            $body = new AMQPMessage($message, ['delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT]);
+            $this->channel->basic_publish($body, $delayExchange, $queue);
+            $this->release();
+        } catch (Exception $e) {
+            throw new AMQPException(sprintf(
+                'RabbitMQ delay queue error is %s file=%s line=%d',
+                $e->getMessage(),
+                $e->getFile(),
+                $e->getLine()
+            ));
+        }
     }
 
     /**
