@@ -324,9 +324,9 @@ class Connection extends AbstractConnection implements ConnectionInterface
      */
     public function delay(string $message, int $delay = 0, string $route = ''): void
     {
-        $exchange = $this->client->getExchange();
+        $exchange      = $this->client->getExchange();
         $delayExchange = 'delay-exchange';
-        $queue    = 'delay-' . $exchange . '-' . $delay;
+        $queue         = 'delay-' . $exchange . '-' . $delay;
 
         try {
             $this->channel->exchange_declare(
